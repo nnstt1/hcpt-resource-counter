@@ -157,12 +157,12 @@ class SlackNotifier:
         except Exception as e:
             logging.error(f"Error sending error message to Slack: {str(e)}")
 
-def get_resource_count(slack_webhook: str = None) -> Tuple[str, int]:
+def get_resource_count(organization: str, token: str, slack_webhook: str = None) -> Tuple[str, int]:
     """リソース数を取得して結果を返す"""
     try:
         tf_api = TerraformAPI(
-            token=os.environ["TF_TOKEN"],
-            organization=os.environ["TF_ORGANIZATION"]
+            token=token,
+            organization=organization
         )
 
         workspaces = tf_api.get_all_workspaces()
@@ -177,14 +177,14 @@ def get_resource_count(slack_webhook: str = None) -> Tuple[str, int]:
             notifier = SlackNotifier(slack_webhook)
             notifier.send_report(tf_api.organization, workspace_resources, total_resources)
 
-        return format_response(workspace_resources, total_resources), 200
+        return format_response(organization, workspace_resources, total_resources), 200
 
     except Exception as e:
         error_message = f"エラーが発生しました: {str(e)}"
         logging.error(error_message)
         return error_message, 500
 
-def format_response(workspace_resources: List[Dict], total_resources: int) -> str:
+def format_response(organization: str, workspace_resources: List[Dict], total_resources: int) -> str:
     """HTTP レスポンス用の JSON を生成"""
     now = datetime.now(Constants.JST).strftime(Constants.DATETIME_FORMAT)
 
@@ -193,6 +193,7 @@ def format_response(workspace_resources: List[Dict], total_resources: int) -> st
     active_workspaces = len(filtered_resources)
 
     response = {
+        "organization": organization,
         "total_resources": total_resources,
         "active_workspaces": active_workspaces,
         "timestamp": now,
@@ -208,7 +209,22 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 def http_get(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP エンドポイント: リソース情報を返すのみ"""
     logging.info("Processing GET request")
-    message, status_code = get_resource_count()
+    organization = req.params.get('org') or os.environ.get("TF_ORGANIZATION")
+    token = req.params.get('token') or os.environ.get("TF_TOKEN")
+
+    if not organization:
+        return func.HttpResponse(
+            "Please provide 'org' query parameter or set 'TF_ORGANIZATION' environment variable",
+            status_code=400
+        )
+
+    if not token:
+        return func.HttpResponse(
+            "Please provide 'token' query parameter or set 'TF_TOKEN' environment variable",
+            status_code=400
+        )
+
+    message, status_code = get_resource_count(organization, token)
     return func.HttpResponse(message, status_code=status_code, mimetype="application/json")
 
 @app.route(route="hcpt", methods=["POST"])
@@ -218,6 +234,20 @@ def http_post(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
         slack_webhook = req_body.get('slack_webhook')
+        organization = req_body.get('org') or os.environ.get("TF_ORGANIZATION")
+        token = req_body.get('token') or os.environ.get("TF_TOKEN")
+
+        if not organization:
+            return func.HttpResponse(
+                "Please provide 'org' in the request body or set 'TF_ORGANIZATION' environment variable",
+                status_code=400
+            )
+
+        if not token:
+            return func.HttpResponse(
+                "Please provide 'token' in the request body or set 'TF_TOKEN' environment variable",
+                status_code=400
+            )
 
         if not slack_webhook:
             return func.HttpResponse(
@@ -225,7 +255,7 @@ def http_post(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400
             )
 
-        message, status_code = get_resource_count(slack_webhook)
+        message, status_code = get_resource_count(organization, token, slack_webhook)
         return func.HttpResponse(message, status_code=status_code)
 
     except ValueError:
@@ -255,11 +285,14 @@ def timer_trigger(timer: func.TimerRequest) -> None:
 
     try:
         slack_webhook = os.environ.get("SLACK_WEBHOOK")
-        if slack_webhook:
-            message, _ = get_resource_count(slack_webhook)
+        organization = os.environ.get("TF_ORGANIZATION")
+        token = os.environ.get("TF_TOKEN")
+
+        if slack_webhook and organization and token:
+            message, _ = get_resource_count(organization, token, slack_webhook)
             logging.info(message)
         else:
-            logging.warning("SLACK_WEBHOOK is not configured")
+            logging.warning("SLACK_WEBHOOK, TF_ORGANIZATION, or TF_TOKEN is not configured")
     except Exception as e:
         error_message = f"エラーが発生しました: {str(e)}"
         logging.error(error_message)

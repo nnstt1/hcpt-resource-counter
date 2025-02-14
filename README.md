@@ -13,27 +13,101 @@ Azure Developer CLI (azd) を使って環境構築できます。
 - HCP Terraform 用トークン
   - アカウントトークン or Organization トークン
 - Azure Functions
-
-## トリガー
-
-- [Timer](https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-bindings-timer)
-  - 指定時刻に起動して Slack に投稿するトリガー
-  - `function_app.py` 内で時刻指定
-- HTTP
-  - GET
-    - HCP Terraform の RUM 数を応答するトリガー
-  - POST
-    - HCP Terraform の RUM 数を Slack に投稿するトリガー
-
-## 環境変数
-
-Azure Functions の環境変数に以下を設定します。
+  - Timer トリガーを使う場合は環境変数を設定
 
 | 環境変数 | 値 |
 | --- | --- |
 | SLACK_WEBHOOK | 投稿先 Slack チャンネルの Incoming Webhook URL |
 | TF_ORGANIZATION | HCP Terraform の Organization 名 |
 | TF_TOKEN | HCP Terraform トークン |
+
+## トリガー
+
+- [Timer](https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-bindings-timer)
+  - 指定時刻に起動して Slack に投稿するトリガー
+- HTTP
+  - GET
+    - HCP Terraform の RUM 数を応答するトリガー
+  - POST
+    - HCP Terraform の RUM 数を Slack に投稿するトリガー
+
+### Timer
+
+指定時刻で Slack チャンネルに HCP Terraform の RUM 数を投稿します。
+
+起動時刻は `function_app.py` 内の `timer_trigger` に指定します。
+投稿先の Slack チャンネル、HCP Terraform の Organization は Azure Functions の環境変数を参照します。
+
+### HTTP トリガー - GET
+
+クエリパラメータ、または Azure Functions の環境変数で指定された HCP Terraform の RUM 数を応答します。
+
+HTTP トリガーのエンドポイントを表示します。
+
+```bash
+export APP_NAME=$(azd env get-value AZURE_FUNCTION_NAME)
+func azure functionapp list-functions $APP_NAME --show-keys
+```
+
+| パラメータ | 値 |
+| --- | --- |
+| org | HCP Terrafrom の Organization 名 |
+| token | HCP Terrafrom トークン |
+
+```bash
+$ curl "https://<HTTP_GET_URL>"
+{
+  "organization": "nnstt1",
+  "total_resources": 13,
+  "active_workspaces": 2,
+  "timestamp": "2025-02-15 04:24:24",
+  "workspaces": [
+    {
+      "name": "home-lab",
+      "count": 8,
+      "status": "active"
+    },
+    {
+      "name": "azure-terraform-cloud-example",
+      "count": 5,
+      "status": "active"
+    }
+  ]
+}
+```
+
+### HTTP トリガー - POST
+
+HCP Terraform の RUM 数を Slack チャンネルに投稿します。
+各パラメータはリクエストボディ、または Azure Functions の環境変数で指定します。
+
+| パラメータ | 値 |
+| --- | --- |
+| slack_webhook | 投稿先 Slack チャンネルの Incoming Webhook URL |
+| org | HCP Terrafrom の Organization 名 |
+| token | HCP Terrafrom トークン |
+
+```bash
+$ curl -X POST "https://<HTTP_POST_URL>" -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
+{
+  "organization": "nnstt1",
+  "total_resources": 13,
+  "active_workspaces": 2,
+  "timestamp": "2025-02-15 04:24:24",
+  "workspaces": [
+    {
+      "name": "home-lab",
+      "count": 8,
+      "status": "active"
+    },
+    {
+      "name": "azure-terraform-cloud-example",
+      "count": 5,
+      "status": "active"
+    }
+  ]
+}
+```
 
 ## Azure Developer CLI による環境構築
 
@@ -60,65 +134,4 @@ Azure リソース作成後、Azure Functions に関数をデプロイできま�
 
 ```bash
 azd deploy
-```
-
-## HTTP トリガーの例
-
-Azure Functions の HTTP を利用例です。
-
-関数のエンドポイントを表示します。
-
-```bash
-export APP_NAME=$(azd env get-value AZURE_FUNCTION_NAME)
-func azure functionapp list-functions $APP_NAME --show-keys
-```
-
-### GET
-
-Azure Functions の環境変数で指定された HCP Terraform の RUM 数を応答します。
-
-```bash
-$ curl "<HTTP_GET_URL>"
-{
-  "total_resources": 13,
-  "active_workspaces": 2,
-  "timestamp": "2025-02-15 04:24:24",
-  "workspaces": [
-    {
-      "name": "home-lab",
-      "count": 8,
-      "status": "active"
-    },
-    {
-      "name": "azure-terraform-cloud-example",
-      "count": 5,
-      "status": "active"
-    }
-  ]
-}
-```
-
-### POST
-
-Azure Functions の環境変数で指定された HCP Terraform の RUM 数をリクエストボディで指定された Slack チャンネルに投稿します。
-
-```bash
-$ curl -X POST "<HTTP_POST_URL>" -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
-{
-  "total_resources": 13,
-  "active_workspaces": 2,
-  "timestamp": "2025-02-15 04:24:24",
-  "workspaces": [
-    {
-      "name": "home-lab",
-      "count": 8,
-      "status": "active"
-    },
-    {
-      "name": "azure-terraform-cloud-example",
-      "count": 5,
-      "status": "active"
-    }
-  ]
-}
 ```
