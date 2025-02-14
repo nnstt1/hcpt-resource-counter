@@ -2,6 +2,8 @@
 
 HCP Terraform の RUM (Resource Under Management) 数をカウントして Slack に投稿するツールです。
 
+![Slck への投稿例](slack-post-example.png)
+
 実行環境に Azure Functions を使っています。
 Azure Developer CLI (azd) を使って環境構築できます。
 
@@ -67,6 +69,27 @@ Azure Functions の POST トリガー `http_post` の URL を取得します。
 ```bash
 export APP_NAME=$(azd env get-value AZURE_FUNCTION_NAME)
 func azure functionapp list-functions $APP_NAME --show-keys
+```
 
-curl -X POST <POST_URL> -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
+取得例。
+
+```bash
+$ curl -X POST "<POST_URL>" -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
+{
+  "total_resources": 13,
+  "active_workspaces": 2,
+  "timestamp": "2025-02-15 04:24:24",
+  "workspaces": [
+    {
+      "name": "home-lab",
+      "count": 8,
+      "status": "active"
+    },
+    {
+      "name": "azure-terraform-cloud-example",
+      "count": 5,
+      "status": "active"
+    }
+  ]
+}
 ```
