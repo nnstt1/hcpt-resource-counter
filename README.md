@@ -62,19 +62,48 @@ Azure リソース作成後、Azure Functions に関数をデプロイできま�
 azd deploy
 ```
 
-## HTTP POST
+## HTTP トリガーの例
 
-Azure Functions の POST トリガー `http_post` の URL を取得します。
+Azure Functions の HTTP を利用例です。
+
+関数のエンドポイントを表示します。
 
 ```bash
 export APP_NAME=$(azd env get-value AZURE_FUNCTION_NAME)
 func azure functionapp list-functions $APP_NAME --show-keys
 ```
 
-取得例。
+### GET
+
+Azure Functions の環境変数で指定された HCP Terraform の RUM 数を応答します。
 
 ```bash
-$ curl -X POST "<POST_URL>" -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
+$ curl "<HTTP_GET_URL>"
+{
+  "total_resources": 13,
+  "active_workspaces": 2,
+  "timestamp": "2025-02-15 04:24:24",
+  "workspaces": [
+    {
+      "name": "home-lab",
+      "count": 8,
+      "status": "active"
+    },
+    {
+      "name": "azure-terraform-cloud-example",
+      "count": 5,
+      "status": "active"
+    }
+  ]
+}
+```
+
+### POST
+
+Azure Functions の環境変数で指定された HCP Terraform の RUM 数をリクエストボディで指定された Slack チャンネルに投稿します。
+
+```bash
+$ curl -X POST "<HTTP_POST_URL>" -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
 {
   "total_resources": 13,
   "active_workspaces": 2,

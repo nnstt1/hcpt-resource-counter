@@ -204,14 +204,14 @@ def format_response(workspace_resources: List[Dict], total_resources: int) -> st
 # Azure Functions のエンドポイント
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
-@app.route(route="httpget", methods=["GET"])
+@app.route(route="hcpt", methods=["GET"])
 def http_get(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP エンドポイント: リソース情報を返すのみ"""
     logging.info("Processing GET request")
     message, status_code = get_resource_count()
     return func.HttpResponse(message, status_code=status_code, mimetype="application/json")
 
-@app.route(route="httppost", methods=["POST"])
+@app.route(route="hcpt", methods=["POST"])
 def http_post(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP エンドポイント: Slack 通知付きのリソース情報取得"""
     logging.info("Processing POST request")
