@@ -5,8 +5,8 @@ from datetime import timezone
 import pytz
 import os
 from typing import Dict, List, Optional, Tuple
-
 import requests
+import json
 
 # 共通の定数定義
 class Constants:
@@ -17,14 +17,14 @@ class Constants:
         "error": "⚠️",
         "unknown": "❓"
     }
-    
+
     STATUS = {
         "ACTIVE": "active",
         "NO_STATE": "no_state",
         "NO_RESOURCES": "no_resources",
         "ERROR": "error"
     }
-    
+
     DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
     API_BASE = "https://app.terraform.io/api/v2"
     JST = pytz.timezone('Asia/Tokyo')
@@ -41,16 +41,16 @@ class TerraformAPI:
         """組織内のすべてのワークスペースを取得"""
         all_workspaces = []
         next_url = f"{Constants.API_BASE}/organizations/{self.organization}/workspaces"
-        
+
         while next_url:
             logging.info(f"Fetching workspaces from: {next_url}")
             response = requests.get(next_url, headers=self.headers)
             response.raise_for_status()
-            
+
             data = response.json()
             all_workspaces.extend(data["data"])
             next_url = data.get("links", {}).get("next")
-        
+
         return all_workspaces
 
     def get_workspace_resources(self, workspace_id: str, workspace_name: str) -> Dict:
@@ -58,14 +58,14 @@ class TerraformAPI:
         try:
             state_url = f"{Constants.API_BASE}/workspaces/{workspace_id}/current-state-version"
             response = requests.get(state_url, headers=self.headers)
-            
+
             if response.status_code == 404:
                 return {"name": workspace_name, "count": 0, "status": Constants.STATUS["NO_STATE"]}
-            
+
             if response.status_code == 200:
                 state_data = response.json()["data"]
-                if (state_data and 
-                    "attributes" in state_data and 
+                if (state_data and
+                    "attributes" in state_data and
                     "billable-rum-count" in state_data["attributes"]):
                     count = state_data["attributes"]["billable-rum-count"]
                     return {
@@ -74,10 +74,10 @@ class TerraformAPI:
                         "status": Constants.STATUS["ACTIVE"] if count > 0 else Constants.STATUS["NO_RESOURCES"]
                     }
                 return {"name": workspace_name, "count": 0, "status": Constants.STATUS["NO_RESOURCES"]}
-            
+
             logging.warning(f"Unexpected status code {response.status_code} for workspace {workspace_name}")
             return {"name": workspace_name, "count": 0, "status": Constants.STATUS["ERROR"]}
-            
+
         except Exception as e:
             logging.error(f"Error processing workspace {workspace_name}: {str(e)}")
             return {
@@ -101,11 +101,11 @@ class SlackNotifier:
         """リソースレポートを Slack に送信"""
         try:
             now = datetime.now(Constants.JST).strftime(Constants.DATETIME_FORMAT)
-            
+
             # リソース数が0より大きいワークスペースのみをフィルタリングしてソート
             filtered_resources = [ws for ws in workspace_resources if ws["count"] > 0]
             sorted_resources = sorted(filtered_resources, key=lambda x: x["count"], reverse=True)
-            
+
             # メッセージを作成して送信
             message = self._create_message(organization, sorted_resources, total_resources, now)
             self._post_to_slack(message)
@@ -116,7 +116,7 @@ class SlackNotifier:
             return False
 
     def _create_message(self, organization: str, workspace_resources: List[Dict],
-                       total_resources: int, timestamp: str) -> Dict:
+                        total_resources: int, timestamp: str) -> Dict:
         """Slackメッセージを作成"""
         # ワークスペース情報の文字列を作成
         workspace_details = ""
@@ -164,47 +164,42 @@ def get_resource_count(slack_webhook: str = None) -> Tuple[str, int]:
             token=os.environ["TF_TOKEN"],
             organization=os.environ["TF_ORGANIZATION"]
         )
-        
+
         workspaces = tf_api.get_all_workspaces()
         workspace_resources = [
             tf_api.get_workspace_resources(ws["id"], ws["attributes"]["name"])
             for ws in workspaces
         ]
-        
+
         total_resources = sum(ws["count"] for ws in workspace_resources)
-        
+
         if slack_webhook:
             notifier = SlackNotifier(slack_webhook)
             notifier.send_report(tf_api.organization, workspace_resources, total_resources)
-        
+
         return format_response(workspace_resources, total_resources), 200
-    
+
     except Exception as e:
         error_message = f"エラーが発生しました: {str(e)}"
         logging.error(error_message)
         return error_message, 500
 
 def format_response(workspace_resources: List[Dict], total_resources: int) -> str:
-    """HTTP レスポンス用の文字列を生成"""
+    """HTTP レスポンス用の JSON を生成"""
     now = datetime.now(Constants.JST).strftime(Constants.DATETIME_FORMAT)
-    
+
     # リソース数が0より大きいワークスペースのみをフィルタリング
     filtered_resources = [ws for ws in workspace_resources if ws["count"] > 0]
     active_workspaces = len(filtered_resources)
-    
-    details = (f"*総リソース数: {total_resources}* "
-              f"(アクティブワークスペース数: {active_workspaces})\n"
-              f"実行日時: {now} (JST)\n\n"
-              "ワークスペース別リソース数:\n")
-    
-    # ソートを適用
-    sorted_resources = sorted(filtered_resources, key=lambda x: x["count"], reverse=True)
-    
-    for ws in sorted_resources:
-        icon = Constants.STATUS_ICONS.get(ws.get("status"), Constants.STATUS_ICONS["unknown"])
-        details += f"{icon} {ws['name']}: {ws['count']} リソース\n"
-    
-    return details
+
+    response = {
+        "total_resources": total_resources,
+        "active_workspaces": active_workspaces,
+        "timestamp": now,
+        "workspaces": filtered_resources
+    }
+
+    return json.dumps(response)
 
 # Azure Functions のエンドポイント
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -214,7 +209,7 @@ def http_get(req: func.HttpRequest) -> func.HttpResponse:
     """HTTP エンドポイント: リソース情報を返すのみ"""
     logging.info("Processing GET request")
     message, status_code = get_resource_count()
-    return func.HttpResponse(message, status_code=status_code)
+    return func.HttpResponse(message, status_code=status_code, mimetype="application/json")
 
 @app.route(route="httppost", methods=["POST"])
 def http_post(req: func.HttpRequest) -> func.HttpResponse:
@@ -223,7 +218,7 @@ def http_post(req: func.HttpRequest) -> func.HttpResponse:
     try:
         req_body = req.get_json()
         slack_webhook = req_body.get('slack_webhook')
-        
+
         if not slack_webhook:
             return func.HttpResponse(
                 "Please provide 'slack_webhook' in the request body",
@@ -254,10 +249,10 @@ def timer_trigger(timer: func.TimerRequest) -> None:
     """タイマートリガー: 環境変数 SLACK_WEBHOOK を使用して Slack に通知"""
     if timer.past_due:
         logging.info('The timer is past due!')
-    
-    logging.info('Timer trigger function executed at %s', 
+
+    logging.info('Timer trigger function executed at %s',
                  datetime.now(Constants.JST).isoformat())
-    
+
     try:
         slack_webhook = os.environ.get("SLACK_WEBHOOK")
         if slack_webhook:
