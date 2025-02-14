@@ -1,195 +1,72 @@
-<!--
----
-name: Azure Functions Python HTTP Trigger using Azure Developer CLI
-description: This repository contains an Azure Functions HTTP trigger quickstart written in Python and deployed to Azure Functions Flex Consumption using the Azure Developer CLI (azd). The sample uses managed identity and a virtual network to make sure deployment is secure by default. You can opt out of a VNet being used in the sample by setting SKIP_VNET to true in the parameters.
-page_type: sample
-languages:
-- azdeveloper
-- python
-- bicep
-products:
-- azure
-- azure-functions
-- entra-id
-urlFragment: functions-quickstart-python-azd
----
--->
+# HCPt resource counter
 
-# Azure Functions Python HTTP Trigger using Azure Developer CLI
+HCP Terraform の RUM (Resource Under Management) 数をカウントして Slack に投稿するツールです。
 
-This template repository contains an HTTP trigger reference sample for Azure Functions written in Python and deployed to Azure using the Azure Developer CLI (`azd`). The sample uses managed identity and a virtual network to make sure deployment is secure by default.
+実行環境に Azure Functions を使っています。
+Azure Developer CLI (azd) を使って環境構築できます。
 
-This source code supports the article [Quickstart: Create and deploy functions to Azure Functions using the Azure Developer CLI](https://learn.microsoft.com/azure/azure-functions/create-first-function-azure-developer-cli?pivots=programming-language-python).
+## 必要なもの
 
-## Prerequisites
+- 投稿先 Slack チャンネルの Incoming Webhook 設定
+- HCP Terraform 用トークン
+  - アカウントトークン or Organization トークン
+- Azure Functions
 
-+ [Python 3.11](https://www.python.org/)
-+ [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local?pivots=programming-language-python#install-the-azure-functions-core-tools)
-+ [Azure Developer CLI (AZD)](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd)
-+ To use Visual Studio Code to run and debug locally:
-  + [Visual Studio Code](https://code.visualstudio.com/)
-  + [Azure Functions extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions)
+## トリガー
 
-## Initialize the local project
+- [Timer](https://learn.microsoft.com/ja-jp/azure/azure-functions/functions-bindings-timer)
+  - 指定時刻に起動して Slack に投稿するトリガー
+  - `function_app.py` 内で時刻指定
+- HTTP
+  - GET
+    - HCP Terraform の RUM 数を応答するトリガー
+  - POST
+    - HCP Terraform の RUM 数を Slack に投稿するトリガー
 
-You can initialize a project from this `azd` template in one of these ways:
+## 環境変数
 
-+ Use this `azd init` command from an empty local (root) folder:
+Azure Functions の環境変数に以下を設定します。
 
-    ```shell
-    azd init --template functions-quickstart-python-http-azd
-    ```
+| 環境変数 | 値 |
+| --- | --- |
+| SLACK_WEBHOOK | 投稿先 Slack チャンネルの Incoming Webhook URL |
+| TF_ORGANIZATION | HCP Terraform の Organization 名 |
+| TF_TOKEN | HCP Terraform トークン |
 
-    Supply an environment name, such as `flexquickstart` when prompted. In `azd`, the environment is used to maintain a unique deployment context for your app.
+## Azure Developer CLI による環境構築
 
-+ Clone the GitHub template repository locally using the `git clone` command:
+このツールは Azure Developer CLI の [functions-quickstart-python-http-azd](https://github.com/Azure-Samples/functions-quickstart-python-http-azd) テンプレートを使って実行環境を構築できます。
 
-    ```shell
-    git clone https://github.com/Azure-Samples/functions-quickstart-python-azd.git
-    cd functions-quickstart-python-azd
-    ```
+作成される Azure Functions は [Flex Consumption プラン](https://learn.microsoft.com/ja-jp/azure/azure-functions/flex-consumption-plan)です。
+日本リージョンに構築できない（2025 年 2 月時点）などの Flex Consumption プラン特有の制約があります。
 
-    You can also clone the repository from your own fork in GitHub.
-
-## Prepare your local environment
-
-Add a file named `local.settings.json` in the root of your project with the following contents:
-
-```json
-{
-    "IsEncrypted": false,
-    "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "python"
-    }
-}
-```
-
-## Create a virtual environment
-
-The way that you create your virtual environment depends on your operating system.
-Open the terminal, navigate to the project folder, and run these commands:
-
-### Linux/macOS/bash
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-#### Windows (Cmd)
-
-```shell
-py -m venv .venv
-.venv\scripts\activate
-```
-
-## Run your app from the terminal
-
-1. To start the Functions host locally, run these commands in the virtual environment:
-
-    ```shell
-    pip3 install -r requirements.txt
-    func start
-    ```
-
-1. From your HTTP test tool in a new terminal (or from your browser), call the HTTP GET endpoint: <http://localhost:7071/api/httpget>
-
-1. Test the HTTP POST trigger with a payload using your favorite secure HTTP test tool. This example uses the `curl` tool with payload data from the [`testdata.json`](./testdata.json) project file:
-
-    ```shell
-    curl -i http://localhost:7071/api/httppost -H "Content-Type: text/json" -d @testdata.json
-    ```
-
-1. When you're done, press Ctrl+C in the terminal window to stop the `func.exe` host process.
-
-1. Run `deactivate` to shut down the virtual environment.
-
-## Run your app using Visual Studio Code
-
-1. Open the root folder in a new terminal.
-1. Run the `code .` code command to open the project in Visual Studio Code.
-1. Press **Run/Debug (F5)** to run in the debugger. Select **Debug anyway** if prompted about local emulator not running.
-1. Send GET and POST requests to the `httpget` and `httppost` endpoints respectively using your HTTP test tool (or browser for `httpget`). If you have the [RestClient](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension installed, you can execute requests directly from the [`test.http`](test.http) project file.
-
-## Source Code
-
-The source code for both functions is in the [`function_app.py`](./function_app.py) code file. Azure Functions requires the use of the `@azure/functions` library.
-
-This code shows an HTTP GET triggered function:  
-
-```python
-@app.route(route="httpget", methods=["GET"])
-def http_get(req: func.HttpRequest) -> func.HttpResponse:
-    name = req.params.get("name", "World")
-
-    logging.info(f"Processing GET request. Name: {name}")
-
-    return func.HttpResponse(f"Hello, {name}!")
-```
-
-This code shows an HTTP POST triggered function:
-
-```python
-@app.route(route="httppost", methods=["POST"])
-def http_post(req: func.HttpRequest) -> func.HttpResponse:
-    try:
-        req_body = req.get_json()
-        name = req_body.get('name')
-        age = req_body.get('age')
-        
-        logging.info(f"Processing POST request. Name: {name}")
-
-        if name and isinstance(name, str) and age and isinstance(age, int):
-            return func.HttpResponse(f"Hello, {name}! You are {age} years old!")
-        else:
-            return func.HttpResponse(
-                "Please provide both 'name' and 'age' in the request body.",
-                status_code=400
-            )
-    except ValueError:
-        return func.HttpResponse(
-            "Invalid JSON in request body",
-            status_code=400
-        )
-```
-
-## Deploy to Azure
-
-Run this command to provision the function app, with any required Azure resources, and deploy your code:
+`azd` を使って Azure リソースを作成します。
 
 ```shell
 azd up
 ```
 
-Alternatively, you can opt-out of a VNet being used in the sample. To do so, use `azd env` to configure `SKIP_VNET` to `true` before running `azd up`:
+VNet を作成しない場合は `SKIP_VNET` に `true` を設定します。
+この場合、`azd up` で作成されるストレージアカウントはパブリックアクセス可能な設定となります。
 
 ```bash
 azd env set SKIP_VNET true
 azd up
 ```
 
-You're prompted to supply these required deployment parameters:
+Azure リソース作成後、Azure Functions に関数をデプロイできます。
 
-| Parameter | Description |
-| ---- | ---- |
-| _Environment name_ | An environment that's used to maintain a unique deployment context for your app. You aren't prompted when you created the local project using `azd init`.|
-| _Azure subscription_ | Subscription in which your resources are created.|
-| _Azure location_ | Azure region in which to create the resource group that contains the new Azure resources. Only regions that currently support the Flex Consumption plan are shown.|
+```bash
+azd deploy
+```
 
-To learn how to obtain your new function endpoints in Azure along with the required function keys, see [Invoke the function on Azure](https://learn.microsoft.com/azure/azure-functions/create-first-function-azure-developer-cli?pivots=programming-language-java#invoke-the-function-on-azure) in the companion article [Quickstart: Create and deploy functions to Azure Functions using the Azure Developer CLI](https://learn.microsoft.com/azure/azure-functions/create-first-function-azure-developer-cli?pivots=programming-language-java#invoke-the-function-on-azure).
+## HTTP POST
 
-## Redeploy your code
+Azure Functions の POST トリガー `http_post` の URL を取得します。
 
-You can run the `azd up` command as many times as you need to both provision your Azure resources and deploy code updates to your function app.
+```bash
+export APP_NAME=$(azd env get-value AZURE_FUNCTION_NAME)
+func azure functionapp list-functions $APP_NAME --show-keys
 
->[!NOTE]
->Deployed code files are always overwritten by the latest deployment package.
-
-## Clean up resources
-
-When you're done working with your function app and related resources, you can use this command to delete the function app and its related resources from Azure and avoid incurring any further costs:
-
-```shell
-azd down
+curl -X POST <POST_URL> -H "Content-Type: application/json" -d '{"slack_webhook": "<SLACK_WEBHOOK>"}'
 ```
